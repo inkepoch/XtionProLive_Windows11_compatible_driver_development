@@ -175,7 +175,7 @@ ColorFrame ColorStream::processRawData(const uint8_t* raw_data, size_t size) {
         convertYUV422toRGB888(raw_data, frame.data.get(), XTION_COLOR_WIDTH * XTION_COLOR_HEIGHT);
     } else {
         // Simple copy
-        size_t copy_size = std::min(size, frame.metadata.data_size);
+        size_t copy_size = std::min<size_t>(size, frame.metadata.data_size);
         std::memcpy(frame.data.get(), raw_data, copy_size);
     }
 

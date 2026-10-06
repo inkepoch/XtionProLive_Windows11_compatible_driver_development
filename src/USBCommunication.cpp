@@ -161,10 +161,11 @@ Status USBCommunication::open(int device_index) {
         return status;
     }
 
-    // Read firmware version
-    readFirmwareVersion(device_info_.fw_version_major,
-                       device_info_.fw_version_minor,
-                       device_info_.fw_version_build);
+    // Firmware version is filled in later via setFirmwareVersion()
+    // once the protocol layer has queried the device
+    device_info_.fw_version_major = 0;
+    device_info_.fw_version_minor = 0;
+    device_info_.fw_version_build = 0;
 
     return Status::OK;
 }
@@ -206,20 +207,28 @@ void USBCommunication::releaseInterface() {
     }
 }
 
-Status USBCommunication::sendCommand(const uint8_t* command, size_t length) {
+Status USBCommunication::sendCommand(const uint8_t* command, size_t length, int timeout_ms) {
     std::lock_guard<std::mutex> lock(usb_mutex_);
 
     if (!device_handle_) {
         return Status::ERROR_DEVICE_NOT_READY;
     }
 
-    int transferred;
-    int result = libusb_bulk_transfer(device_handle_, EP_COMMAND_OUT,
-                                     const_cast<uint8_t*>(command), length,
-                                     &transferred, USB_TIMEOUT_MS);
+    // PS1080 host protocol: vendor request 0, wValue 0, wIndex 0 (device recipient)
+    int result = libusb_control_transfer(device_handle_,
+                                         LIBUSB_ENDPOINT_OUT | LIBUSB_REQUEST_TYPE_VENDOR | LIBUSB_RECIPIENT_DEVICE,
+                                         0, 0, 0,
+                                         const_cast<uint8_t*>(command),
+                                         static_cast<uint16_t>(length), timeout_ms);
 
-    if (result != LIBUSB_SUCCESS) {
+    if (result == LIBUSB_ERROR_TIMEOUT || result == LIBUSB_ERROR_PIPE) {
+        // Device NAKs or stalls while busy; caller retries
+        return Status::ERROR_TIMEOUT;
+    } else if (result < 0) {
         std::cerr << "Failed to send command: " << libusb_error_name(result) << std::endl;
+        return Status::ERROR_USB_COMM_FAILED;
+    } else if (static_cast<size_t>(result) != length) {
+        std::cerr << "Short command write: " << result << "/" << length << " bytes" << std::endl;
         return Status::ERROR_USB_COMM_FAILED;
     }
 
@@ -230,23 +239,26 @@ Status USBCommunication::receiveResponse(uint8_t* buffer, size_t length,
                                         size_t& received, int timeout_ms) {
     std::lock_guard<std::mutex> lock(usb_mutex_);
 
+    received = 0;
+
     if (!device_handle_) {
         return Status::ERROR_DEVICE_NOT_READY;
     }
 
-    int transferred;
-    int result = libusb_interrupt_transfer(device_handle_, EP_RESPONSE_IN,
-                                          buffer, length, &transferred, timeout_ms);
+    int result = libusb_control_transfer(device_handle_,
+                                         LIBUSB_ENDPOINT_IN | LIBUSB_REQUEST_TYPE_VENDOR | LIBUSB_RECIPIENT_DEVICE,
+                                         0, 0, 0,
+                                         buffer, static_cast<uint16_t>(length), timeout_ms);
 
-    received = transferred;
-
-    if (result == LIBUSB_ERROR_TIMEOUT) {
+    if (result == LIBUSB_ERROR_TIMEOUT || result == LIBUSB_ERROR_PIPE) {
+        // Reply not ready yet; caller polls again
         return Status::ERROR_TIMEOUT;
-    } else if (result != LIBUSB_SUCCESS) {
+    } else if (result < 0) {
         std::cerr << "Failed to receive response: " << libusb_error_name(result) << std::endl;
         return Status::ERROR_USB_COMM_FAILED;
     }
 
+    received = static_cast<size_t>(result);
     return Status::OK;
 }
 
@@ -297,13 +309,12 @@ Status USBCommunication::readSerialNumber(std::string& serial) {
     return Status::ERROR_USB_COMM_FAILED;
 }
 
-Status USBCommunication::readFirmwareVersion(uint8_t& major, uint8_t& minor, uint16_t& build) {
-    // TODO: Implement firmware version reading via protocol command
-    // For now, set default values
-    major = 5;
-    minor = 8;
-    build = 22;
-    return Status::OK;
+void USBCommunication::setFirmwareVersion(uint8_t major, uint8_t minor, uint16_t build) {
+    std::lock_guard<std::mutex> lock(usb_mutex_);
+
+    device_info_.fw_version_major = major;
+    device_info_.fw_version_minor = minor;
+    device_info_.fw_version_build = build;
 }
 
 } // namespace xtion

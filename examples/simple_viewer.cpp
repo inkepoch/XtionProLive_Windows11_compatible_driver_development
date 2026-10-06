@@ -9,6 +9,7 @@
  */
 
 #include "XtionDevice.h"
+#include <iomanip>
 #include <iostream>
 #include <thread>
 #include <chrono>
@@ -75,7 +76,7 @@ int main(int argc, char* argv[]) {
             uint16_t max_depth = 0;
 
             for (int i = 0; i < frame.metadata.width * frame.metadata.height; i++) {
-                if (data[i] != xtion::XTION_DEPTH_INVALID && data[i] > 0) {
+                if (data[i] != XTION_DEPTH_INVALID && data[i] > 0) {
                     valid_pixels++;
                     sum += data[i];
                     if (data[i] < min_depth) min_depth = data[i];

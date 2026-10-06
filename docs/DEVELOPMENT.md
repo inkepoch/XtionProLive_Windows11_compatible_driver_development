@@ -63,40 +63,39 @@ ASUS Xtion Pro LiveをWindows 11（Ryzen AI 9 HX 370）で動作させるため�
 
 ### 4.1 エンドポイント構成
 
+FW 3.0/4.0 以降（OpenNI2 `XnDeviceSensorIO.cpp` より）:
+
 ```c
-#define EP_COLOR_IN     0x81  // RGBカラーストリーム (Bulk)
-#define EP_DEPTH_IN     0x82  // 深度データストリーム (Isochronous)
-#define EP_IR_IN        0x83  // 赤外線ストリーム (Bulk)
-#define EP_COMMAND_OUT  0x02  // コマンド送信 (Control)
-#define EP_RESPONSE_IN  0x86  // レスポンス受信 (Interrupt)
+// コマンド/応答: エンドポイント0の vendor control transfer
+//   送信: bmRequestType=0x40, bRequest=0, wValue=0, wIndex=0
+//   受信: bmRequestType=0xC0, bRequest=0, wValue=0, wIndex=0（応答が来るまでポーリング）
+#define EP_DEPTH_IN     0x81  // 深度
+#define EP_IMAGE_IN     0x82  // カラー/IR
+#define EP_MISC_IN      0x83  // その他
+// Interface 0: Alt 0 = ISO, Alt 1 = BULK
 ```
 
-### 4.2 初期化シーケンス
+### 4.2 コマンドプロトコル
+
+詳細は [WINDOWS11_LIBUSB_PORT.md](WINDOWS11_LIBUSB_PORT.md) を参照。
 
 ```c
-// 1. デバイスリセット
-unsigned char reset_cmd[] = {0x05, 0x00, 0x00, 0x01, 0x00, 0x00};
+// リクエストヘッダ（リトルエンディアン, 8バイト）
+struct { uint16_t magic /* 0x4d47 */; uint16_t size /* ペイロードのワード数 */;
+         uint16_t opcode; uint16_t id; };
+// 応答: 同形式ヘッダ（magic 0x4252）+ uint16_t errorCode（0=ACK, 13=NOT_READY）+ データ
 
-// 2. ファームウェアバージョン確認
-unsigned char version_cmd[] = {0x02, 0x00, 0x00, 0x00, 0x00, 0x00};
-
-// 3. ストリームモード設定
-unsigned char stream_mode[] = {0x05, 0x00, 0x02, 0x03, 0x01, 0x00};
-
-// 4. 深度カメラ初期化
-unsigned char depth_init[] = {0x13, 0x00, 0x00, 0x00, 0x00, 0x00};
-
-// 5. RGBカメラ初期化
-unsigned char rgb_init[] = {0x14, 0x00, 0x00, 0x00, 0x00, 0x00};
+// 主な opcode
+// GET_VERSION=0, KEEP_ALIVE=1, GET_PARAM=2, SET_PARAM=3, GET_FIXED_PARAMS=4, GET_SERIAL_NUMBER=37
+// ストリーム開始/停止は専用 opcode ではなく SET_PARAM でストリームモードを設定する
 ```
 
 ### 4.3 データフォーマット
 
 #### 深度データ
-- 形式：16bit unsigned integer
-- 単位：ミリメートル
+- パケット種別：0x7100（開始）/ 0x7200（途中）/ 0x7500（終了）
+- 形式：圧縮/パック済みの shift 値（ホスト側で固定パラメータからの変換表により mm に変換）
 - 無効値：0x0000
-- 最大値：0xFFFF
 
 #### RGBデータ
 - 形式：YUV422またはRGB888

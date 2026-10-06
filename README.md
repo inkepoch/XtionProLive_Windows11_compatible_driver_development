@@ -133,6 +133,13 @@ if (device.open()) {
 }
 ```
 
+## Windows 11 での疎通確認
+
+1. [Zadig](https://zadig.akeo.ie/) で `VID 1D27 / PID 0601`（Interface 0）に WinUSB を割り当て
+2. ビルド後、`xtion_probe` を実行してファームウェアバージョンが表示されることを確認
+
+OpenNI2 を libusb で Windows に移植する方針は [docs/WINDOWS11_LIBUSB_PORT.md](docs/WINDOWS11_LIBUSB_PORT.md) を参照。
+
 ## 開発ロードマップ
 
 ### Phase 1: USB通信解析（1週間）

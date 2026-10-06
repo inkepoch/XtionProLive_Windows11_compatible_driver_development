@@ -68,7 +68,8 @@ enum class Status {
     ERROR_NOT_IMPLEMENTED = -9,
     ERROR_FIRMWARE_VERSION = -10,
     ERROR_STREAM_NOT_STARTED = -11,
-    ERROR_STREAM_ALREADY_STARTED = -12
+    ERROR_STREAM_ALREADY_STARTED = -12,
+    ERROR_PROTOCOL = -13
 };
 
 // Pixel formats
@@ -143,6 +144,7 @@ inline const char* statusToString(Status status) {
         case Status::ERROR_FIRMWARE_VERSION: return "Incompatible firmware version";
         case Status::ERROR_STREAM_NOT_STARTED: return "Stream not started";
         case Status::ERROR_STREAM_ALREADY_STARTED: return "Stream already started";
+        case Status::ERROR_PROTOCOL: return "Device protocol error";
         default: return "Unknown error";
     }
 }

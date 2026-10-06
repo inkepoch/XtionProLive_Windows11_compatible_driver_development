@@ -59,20 +59,21 @@ public:
     bool isOpen() const { return device_handle_ != nullptr; }
 
     /**
-     * @brief Send control command to device
+     * @brief Send protocol command via vendor control transfer (OUT)
      * @param command Command buffer
      * @param length Command length
-     * @return Status code
+     * @param timeout_ms Timeout in milliseconds
+     * @return Status code (ERROR_TIMEOUT if the device is busy)
      */
-    Status sendCommand(const uint8_t* command, size_t length);
+    Status sendCommand(const uint8_t* command, size_t length, int timeout_ms = 1000);
 
     /**
-     * @brief Receive response from device
+     * @brief Receive protocol reply via vendor control transfer (IN)
      * @param buffer Response buffer
      * @param length Maximum buffer length
      * @param received Actual bytes received
      * @param timeout_ms Timeout in milliseconds
-     * @return Status code
+     * @return Status code (ERROR_TIMEOUT if no reply is ready yet)
      */
     Status receiveResponse(uint8_t* buffer, size_t length,
                           size_t& received, int timeout_ms = 1000);
@@ -106,6 +107,14 @@ public:
      */
     const DeviceInfo& getDeviceInfo() const { return device_info_; }
 
+    /**
+     * @brief Store firmware version obtained via the protocol layer
+     * @param major Major version
+     * @param minor Minor version
+     * @param build Build number
+     */
+    void setFirmwareVersion(uint8_t major, uint8_t minor, uint16_t build);
+
 private:
     /**
      * @brief Claim device interface
@@ -125,15 +134,6 @@ private:
      */
     Status readSerialNumber(std::string& serial);
 
-    /**
-     * @brief Read firmware version
-     * @param major Major version
-     * @param minor Minor version
-     * @param build Build number
-     * @return Status code
-     */
-    Status readFirmwareVersion(uint8_t& major, uint8_t& minor, uint16_t& build);
-
     libusb_context* context_;
     libusb_device_handle* device_handle_;
     DeviceInfo device_info_;
@@ -141,7 +141,6 @@ private:
     std::mutex usb_mutex_;
 
     static constexpr int INTERFACE_NUMBER = 0;
-    static constexpr int USB_TIMEOUT_MS = 1000;
 };
 
 } // namespace xtion

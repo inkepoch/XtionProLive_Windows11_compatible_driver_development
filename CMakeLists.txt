@@ -17,10 +17,11 @@ find_package(PkgConfig)
 
 # libusb
 if(WIN32)
-    # On Windows, we expect libusb to be found via vcpkg
-    find_package(libusb CONFIG)
-    if(NOT libusb_FOUND)
-        message(WARNING "libusb not found. Install via vcpkg: vcpkg install libusb:x64-windows")
+    # On Windows, we expect libusb to be found via vcpkg (include/libusb-1.0, libusb-1.0.lib)
+    find_path(LIBUSB_INCLUDE_DIRS libusb.h PATH_SUFFIXES libusb-1.0)
+    find_library(LIBUSB_LIBRARIES NAMES libusb-1.0 usb-1.0)
+    if(NOT LIBUSB_INCLUDE_DIRS OR NOT LIBUSB_LIBRARIES)
+        message(FATAL_ERROR "libusb not found. Install via vcpkg: vcpkg install libusb:x64-windows")
     endif()
 else()
     pkg_check_modules(LIBUSB REQUIRED libusb-1.0)
@@ -75,9 +76,12 @@ add_library(XtionDriver SHARED
 )
 
 target_link_libraries(XtionDriver
-    PRIVATE
-    $<IF:$<TARGET_EXISTS:libusb::libusb>,libusb::libusb,${LIBUSB_LIBRARIES}>
+    PUBLIC
+    ${LIBUSB_LIBRARIES}
 )
+
+# Export all symbols so tests/examples can link against the DLL on Windows
+set_target_properties(XtionDriver PROPERTIES WINDOWS_EXPORT_ALL_SYMBOLS ON)
 
 # Compiler warnings
 if(MSVC)
@@ -119,7 +123,7 @@ message(STATUS "Xtion Pro Live Driver Configuration")
 message(STATUS "========================================")
 message(STATUS "Build type: ${CMAKE_BUILD_TYPE}")
 message(STATUS "C++ standard: ${CMAKE_CXX_STANDARD}")
-message(STATUS "libusb found: ${libusb_FOUND}")
+message(STATUS "libusb: ${LIBUSB_LIBRARIES}")
 message(STATUS "OpenNI2 found: ${OPENNI2_FOUND}")
 message(STATUS "Build tests: ${BUILD_TESTS}")
 message(STATUS "Build examples: ${BUILD_EXAMPLES}")

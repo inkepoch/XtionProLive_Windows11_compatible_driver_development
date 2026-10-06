@@ -67,7 +67,7 @@ int main() {
                 uint16_t max_depth = 0;
 
                 for (int p = 0; p < frame.metadata.width * frame.metadata.height; p++) {
-                    if (data[p] != xtion::XTION_DEPTH_INVALID && data[p] > 0) {
+                    if (data[p] != XTION_DEPTH_INVALID && data[p] > 0) {
                         valid_pixels++;
                         sum += data[p];
                         if (data[p] < min_depth) min_depth = data[p];

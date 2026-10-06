@@ -1,5 +1,7 @@
 #include "XtionDevice.h"
+#include <chrono>
 #include <iostream>
+#include <thread>
 
 namespace xtion {
 
@@ -282,26 +284,18 @@ Status XtionDevice::initialize() {
         return Status::ERROR_DEVICE_NOT_READY;
     }
 
-    // Verify firmware version
+    // GetVersion is the first protocol exchange; failure means the device
+    // cannot be talked to at all (wrong driver bound, unsupported USB port, ...)
     Status status = verifyFirmwareVersion();
-    if (status != Status::OK) {
+    if (status == Status::ERROR_FIRMWARE_VERSION) {
         std::cerr << "Warning: Firmware version check failed. Device may not work correctly." << std::endl;
         // Continue anyway - we'll try to make it work
+    } else if (status != Status::OK) {
+        std::cerr << "Failed to communicate with device: " << statusToString(status) << std::endl;
+        return status;
     }
 
-    // Reset device
-    status = protocol_->resetDevice();
-    if (status != Status::OK) {
-        std::cerr << "Warning: Device reset failed." << std::endl;
-        // Continue anyway
-    }
-
-    // Set default stream mode
-    status = protocol_->setStreamMode(0x01);
-    if (status != Status::OK) {
-        std::cerr << "Warning: Failed to set stream mode." << std::endl;
-        // Continue anyway
-    }
+    // TODO: Configure streams via OPCODE_SET_PARAM (not implemented yet)
 
     return Status::OK;
 }
@@ -311,12 +305,20 @@ Status XtionDevice::verifyFirmwareVersion() {
         return Status::ERROR_DEVICE_NOT_READY;
     }
 
-    uint8_t major, minor;
-    uint16_t build;
+    uint8_t major = 0, minor = 0;
+    uint16_t build = 0;
     Status status = protocol_->getFirmwareVersion(major, minor, build);
+
+    // The very first command after power-up sometimes gets no reply (same workaround as OpenNI2)
+    if (status == Status::ERROR_TIMEOUT) {
+        std::this_thread::sleep_for(std::chrono::seconds(2));
+        status = protocol_->getFirmwareVersion(major, minor, build);
+    }
     if (status != Status::OK) {
         return status;
     }
+
+    usb_->setFirmwareVersion(major, minor, build);
 
     std::cout << "Firmware version: " << static_cast<int>(major)
               << "." << static_cast<int>(minor)

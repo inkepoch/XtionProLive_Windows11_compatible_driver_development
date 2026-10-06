@@ -48,8 +48,8 @@ int main(int argc, char* argv[]) {
     struct FileHeader {
         char magic[8] = {'X', 'T', 'I', 'O', 'N', 'D', 'E', 'P'};
         uint32_t version = 1;
-        uint32_t width = xtion::XTION_DEPTH_WIDTH;
-        uint32_t height = xtion::XTION_DEPTH_HEIGHT;
+        uint32_t width = XTION_DEPTH_WIDTH;
+        uint32_t height = XTION_DEPTH_HEIGHT;
         uint32_t frame_count = 0;  // Will be updated at the end
     } header;
 

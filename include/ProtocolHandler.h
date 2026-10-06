@@ -4,14 +4,30 @@
 #include "XtionCommon.h"
 #include "USBCommunication.h"
 #include <memory>
+#include <mutex>
+#include <string>
+#include <vector>
 
 namespace xtion {
 
 /**
+ * @brief Hardware/firmware versions reported by OPCODE_GET_VERSION
+ */
+struct VersionInfo {
+    uint8_t major;
+    uint8_t minor;
+    uint16_t build;
+    uint32_t chip;            // 0x00202020 = PS1080, 0x00212020 = PS1080A6
+    uint16_t fpga;
+    uint16_t system_version;
+};
+
+/**
  * @brief Protocol handler for Xtion Pro Live commands
  *
- * Implements the PrimeSense PS1080 protocol for device control.
- * Based on analysis from xqms/xtion and libfreenect projects.
+ * Implements the PrimeSense PS1080 host protocol (firmware 1.2 and later).
+ * Commands and replies are exchanged via vendor control transfers.
+ * Reference: OpenNI2 Source/Drivers/PS1080/Sensor/XnHostProtocol.cpp
  */
 class ProtocolHandler {
 public:
@@ -19,10 +35,11 @@ public:
     ~ProtocolHandler() = default;
 
     /**
-     * @brief Reset device
+     * @brief Get hardware/firmware versions
+     * @param version Output version information
      * @return Status code
      */
-    Status resetDevice();
+    Status getVersion(VersionInfo& version);
 
     /**
      * @brief Get firmware version
@@ -32,6 +49,25 @@ public:
      * @return Status code
      */
     Status getFirmwareVersion(uint8_t& major, uint8_t& minor, uint16_t& build);
+
+    /**
+     * @brief Get sensor serial number (firmware 5.4 and later)
+     * @param serial Output serial number
+     * @return Status code
+     */
+    Status getSerialNumber(std::string& serial);
+
+    /**
+     * @brief Send keep-alive command
+     * @return Status code
+     */
+    Status keepAlive();
+
+    /**
+     * @brief Reset device
+     * @return Status code
+     */
+    Status resetDevice();
 
     /**
      * @brief Initialize depth camera
@@ -110,49 +146,55 @@ public:
 
 private:
     /**
-     * @brief Send command and wait for response
-     * @param command Command buffer
-     * @param cmd_length Command length
-     * @param response Response buffer
-     * @param resp_length Maximum response length
-     * @param received Actual bytes received
+     * @brief Send a command and wait for its reply
+     * @param opcode Operation code
+     * @param payload Command payload (must be an even number of bytes)
+     * @param payload_size Payload size in bytes
+     * @param reply_data Output reply data (without headers)
      * @return Status code
      */
-    Status sendCommandWithResponse(const uint8_t* command, size_t cmd_length,
-                                   uint8_t* response, size_t resp_length,
-                                   size_t& received);
+    Status execute(uint16_t opcode, const uint8_t* payload, size_t payload_size,
+                   std::vector<uint8_t>& reply_data);
 
     /**
-     * @brief Build command packet
-     * @param opcode Operation code
-     * @param params Parameters
-     * @param param_count Parameter count
-     * @param buffer Output buffer
-     * @return Command length
+     * @brief Poll for the reply matching a request
+     * @param opcode Expected operation code
+     * @param request_id Expected request id
+     * @param reply_data Output reply data (without headers)
+     * @return Status code
      */
-    size_t buildCommand(uint8_t opcode, const uint16_t* params,
-                       size_t param_count, uint8_t* buffer);
+    Status receiveReply(uint16_t opcode, uint16_t request_id,
+                        std::vector<uint8_t>& reply_data);
 
     std::shared_ptr<USBCommunication> usb_;
+    std::mutex execute_mutex_;
+    uint16_t next_request_id_;
 
-    // Command opcodes (based on reverse engineering)
-    static constexpr uint8_t CMD_RESET = 0x05;
-    static constexpr uint8_t CMD_GET_VERSION = 0x02;
-    static constexpr uint8_t CMD_SET_MODE = 0x05;
-    static constexpr uint8_t CMD_DEPTH_INIT = 0x13;
-    static constexpr uint8_t CMD_RGB_INIT = 0x14;
-    static constexpr uint8_t CMD_IR_INIT = 0x15;
-    static constexpr uint8_t CMD_START_DEPTH = 0x20;
-    static constexpr uint8_t CMD_STOP_DEPTH = 0x21;
-    static constexpr uint8_t CMD_START_COLOR = 0x22;
-    static constexpr uint8_t CMD_STOP_COLOR = 0x23;
-    static constexpr uint8_t CMD_START_IR = 0x24;
-    static constexpr uint8_t CMD_STOP_IR = 0x25;
-    static constexpr uint8_t CMD_GET_TEMP = 0x30;
-    static constexpr uint8_t CMD_SET_REGISTRATION = 0x40;
+    // Protocol header magic values (firmware 1.2 and later)
+    static constexpr uint16_t HOST_MAGIC = 0x4d47;  // "GM"
+    static constexpr uint16_t FW_MAGIC = 0x4252;    // "RB"
+    static constexpr size_t HEADER_SIZE = 8;        // magic, size, opcode, id
+    static constexpr size_t REPLY_HEADER_SIZE = 2;  // error code
 
-    static constexpr size_t MAX_COMMAND_SIZE = 1024;
-    static constexpr size_t MAX_RESPONSE_SIZE = 1024;
+    // Command opcodes (firmware 3.0 and later)
+    static constexpr uint16_t OPCODE_GET_VERSION = 0;
+    static constexpr uint16_t OPCODE_KEEP_ALIVE = 1;
+    static constexpr uint16_t OPCODE_GET_PARAM = 2;
+    static constexpr uint16_t OPCODE_SET_PARAM = 3;
+    static constexpr uint16_t OPCODE_GET_FIXED_PARAMS = 4;
+    static constexpr uint16_t OPCODE_GET_SERIAL_NUMBER = 37;
+
+    // Reply error codes
+    static constexpr uint16_t ACK = 0;
+    static constexpr uint16_t NACK_NOT_READY = 13;
+
+    static constexpr size_t MAX_PACKET_SIZE = 512;  // firmware 5.0 and later
+    static constexpr int SEND_RETRIES = 5;
+    static constexpr int NOT_READY_RETRIES = 3;
+    static constexpr int USB_TIMEOUT_MS = 1000;
+    static constexpr int REPLY_TIMEOUT_MS = 2000;
+    static constexpr int POST_SEND_DELAY_MS = 10;
+    static constexpr int RECEIVE_POLL_MS = 10;
 };
 
 } // namespace xtion
